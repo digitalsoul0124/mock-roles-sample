@@ -2,6 +2,6 @@ package time;
 
 public interface ObjectLoader {
 
-    Object load(String string);
+    Object load(String key);
 
 }

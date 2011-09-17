@@ -6,16 +6,33 @@ import java.util.Map;
 public class TimedCache {
 
     final private ObjectLoader loader;
-    final private Map<String, Object> cachedValues = new HashMap<String, Object>();
+    final private Map<String, TimestampedValue> cachedValues = new HashMap<String, TimestampedValue>();
+    final private Clock clock;
+    final private ReloadPolicy policy;
 
-    public TimedCache(ObjectLoader loader) {
+    public TimedCache(ObjectLoader loader, Clock clock, ReloadPolicy policy) {
         this.loader = loader;
+        this.clock = clock;
+        this.policy = policy;
     }
 
     public Object lookup(String key) {
-        if (!cachedValues.containsKey(key)) {
-            cachedValues.put(key, loader.load(key));
+        TimestampedValue found = cachedValues.get(key);
+
+        if (found == null || policy.shouldReload(found.timestamp, clock.getCurrentTime())) {
+            TimestampedValue relaodedValue = new TimestampedValue(loader.load(key), clock.getCurrentTime());
+            cachedValues.put(key, relaodedValue);
         }
-        return cachedValues.get(key);
+        return cachedValues.get(key).value;
+    }
+
+    private static class TimestampedValue {
+        final public Object value;
+        final public Timestamp timestamp;
+
+        public TimestampedValue(Object value, Timestamp timestamp) {
+            this.value = value;
+            this.timestamp = timestamp;
+        }
     }
 }

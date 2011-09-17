@@ -1,10 +1,11 @@
 package time;
 
-import static org.junit.Assert.*;
-import static org.hamcrest.Matchers.*;
+import static org.hamcrest.Matchers.is;
+import static org.junit.Assert.assertThat;
 
 import org.jmock.Expectations;
 import org.jmock.Mockery;
+import org.jmock.Sequence;
 import org.jmock.integration.junit4.JMock;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -18,33 +19,84 @@ public class TimedCacheTest {
     public void キャッシュされていないオブジェクトはロードする() throws Exception {
 
         final ObjectLoader mockLoader = context.mock(ObjectLoader.class);
+        final Clock mockClock = context.mock(Clock.class);
+        final ReloadPolicy mockPolicy = context.mock(ReloadPolicy.class);
 
         context.checking(new Expectations() {
             {
-                oneOf(mockLoader).load("KEY1");
-                will(returnValue("VALUE1"));
+                oneOf(mockLoader).load("KEY");
+                will(returnValue("VALUE"));
+
+                allowing(mockClock).getCurrentTime();
+                will(returnValue(new Timestamp("2011/09/16 00:00:00.000")));
             }
         });
 
-        TimedCache cache = new TimedCache(mockLoader);
-        assertThat((String) cache.lookup("KEY1"), is("VALUE1"));
+        TimedCache cache = new TimedCache(mockLoader, mockClock, mockPolicy);
+        assertThat((String) cache.lookup("KEY"), is("VALUE"));
     }
 
     @Test
-    public void キャッシュされたオブジェクトはロードしない() throws Exception {
+    public void タイムアウト前のキャッシュされたオブジェクトはロードしない() throws Exception {
+        // 呼び出しの順番もあわせて定義する
 
+        final Sequence sequence = context.sequence("sequence");
+
+        final Clock mockClock = context.mock(Clock.class);
         final ObjectLoader mockLoader = context.mock(ObjectLoader.class);
+        final ReloadPolicy mockPolicy = context.mock(ReloadPolicy.class);
+
+        final Timestamp loadTime = new Timestamp("2011/09/17 00:00:00.000");
+        final Timestamp fetchTime = new Timestamp("2011/09/17 00:00:01.000"); // 1秒後
 
         context.checking(new Expectations() {
             {
-                oneOf(mockLoader).load("KEY1");
-                will(returnValue("VALUE1"));
+
+                oneOf(mockLoader).load("KEY");
+                will(returnValue("VALUE"));
+                inSequence(sequence);
+
+                exactly(2).of(mockClock).getCurrentTime();
+                will(onConsecutiveCalls(returnValue(loadTime), returnValue(fetchTime)));
+                inSequence(sequence);
+
+                atLeast(1).of(mockPolicy).shouldReload(loadTime, fetchTime);
+                will(returnValue(false));
             }
         });
 
-        TimedCache cache = new TimedCache(mockLoader);
-        assertThat("ロードされたオブジェクト", (String) cache.lookup("KEY1"), is("VALUE1"));
-        assertThat("キャッシュされたオブジェクト", (String) cache.lookup("KEY1"), is("VALUE1"));
+        TimedCache cache = new TimedCache(mockLoader, mockClock, mockPolicy);
+        assertThat("ロードされたオブジェクト", (String) cache.lookup("KEY"), is("VALUE"));
+        assertThat("キャッシュされたオブジェクト", (String) cache.lookup("KEY"), is("VALUE"));
+    }
+
+    @Test
+    public void タイムアウト後のキャッシュされたオブジェクトはロードする() throws Exception {
+
+        final Clock mockClock = context.mock(Clock.class);
+        final ObjectLoader mockLoader = context.mock(ObjectLoader.class);
+        final ReloadPolicy mockPolicy = context.mock(ReloadPolicy.class);
+
+        final Timestamp loadTime = new Timestamp("2011/09/17 00:00:00.000");
+        final Timestamp fetchTime = new Timestamp("2011/09/17 00:00:01.000"); // 1秒後
+        final Timestamp reloadTime = new Timestamp("2011/09/17 00:00:02.000"); // 2秒後
+
+        context.checking(new Expectations() {
+            {
+                exactly(3).of(mockClock).getCurrentTime();
+                will(onConsecutiveCalls(returnValue(loadTime), returnValue(fetchTime), returnValue(reloadTime)));
+
+                exactly(2).of(mockLoader).load("KEY");
+                will(onConsecutiveCalls(returnValue("VALUE"), returnValue("NEW-VALUE")));
+
+                atLeast(1).of(mockPolicy).shouldReload(loadTime, fetchTime);
+                will(returnValue(true));
+            }
+        });
+
+        TimedCache cache = new TimedCache(mockLoader, mockClock, mockPolicy);
+        assertThat("ロードされたオブジェクト", (String) cache.lookup("KEY"), is("VALUE"));
+        assertThat("キャッシュされたオブジェクト", (String) cache.lookup("KEY"), is("NEW-VALUE"));
     }
 
 }
