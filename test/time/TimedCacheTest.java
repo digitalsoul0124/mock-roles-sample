@@ -13,6 +13,16 @@ import org.junit.runner.RunWith;
 @RunWith(JMock.class)
 public class TimedCacheTest {
 
+    /*
+     * 仕様：
+     * オブジェクトをロードするフレームワークに対してキーを元にした検索を行い、
+     * その結果をキャッシュするコンポーネントを考える。
+     * ロードされてから一定時間が経つと、そのインスタンスは使えなくなる。
+     * そこで、時々リロードをしなければならなくなる。
+     * 
+     * 参考：http://jmock.org/oopsla2004_ja.pdf
+     */
+    
     private Mockery context = new Mockery();
 
     @Test
